@@ -37,17 +37,24 @@ you can get the thread ID, set index, address (PC) of the memory access
 instruction, whether the access was a hit or miss, and the type of access
 e.g. demand read, write, prefetch, writeback, or instruction cache read.
 
+Note that there will be many copies of your CACHE_REPLACEMENT_STATE, one
+for each cache.  You can tell which cache you are in by looking at the
+associativity (it is distinct for each cache level) as well as the core
+number. For example, if assoc is 8 and tid is 4, you know you're in the
+second level cache for core #4.
+
 Do not modify any of the other files. We will only evaluate your
 replacement_state.cpp and replacement_state.h files.
 
 27 traces from SPEC CPU 2006 have been provided in the "traces"
 directory. These traces are the last-level cache accesses for one billion
 instructions on a machine with a three-level cache hierarchy where the first
-level is 32KB split I+D and, level is a unified 256KB, and the third level
-is the 4MB cache you are optimizing. Your goal is to maximize geometric
-mean speedup over LRU. That is, for each benchmark compute the IPC with
-your technique, divide that by the IPC from LRU to get the speedup, then
-take the geometric mean of all the speedups.
+level is a unified 64KB with associativity 4, second level is a unified
+256KB with associativity 8, and the third level is the 4MB last-level cache
+with associativity 16. Your goal is to maximize geometric mean speedup
+over LRU. That is, for each benchmark compute the IPC with your technique,
+divide that by the IPC from LRU to get the speedup, then take the geometric
+mean of all the speedups.
 
 For this project, let us not focus on the hardware budget; rather, use
 what resources you need to use to implement a reasonable replacement
