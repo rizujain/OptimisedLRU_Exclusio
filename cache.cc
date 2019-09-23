@@ -70,7 +70,7 @@ void move_to_mru (block *v, int i) {
 	v[0] = b;
 }
 
-// invalidate a block out of this cache!
+// invalidate a block out of this cache! the block might not be there, but if it is, we'll blow it away
 
 void invalidate (cache *c, unsigned long long int address) {
 	int i, assoc = c->assoc;
@@ -91,9 +91,9 @@ void invalidate (cache *c, unsigned long long int address) {
 
 // access a cache, return true for miss, false for hit
 
-#define check_writeback(b) { if (writeback_address && v[(b)].valid && v[(b)].dirty) *writeback_address = ((v[(b)].tag << c->index_bits) + set) << c->offset_bits; }
+#define check_writeback(b) { if (writeback_address && v[(b)].valid && (v[(b)].dirty || (assoc!=16))) *writeback_address = ((v[(b)].tag << c->index_bits) + set) << c->offset_bits; }
 
-bool cache_access (cache *c, unsigned long long int address, unsigned long long int pc, unsigned int size, int op, unsigned int core, unsigned long long int *writeback_address = NULL) {
+bool cache_access (cache *c, unsigned long long int address, unsigned long long int pc, unsigned int size, int op, unsigned int core, unsigned long long int *writeback_address = NULL, bool do_place = true) {
 	c->counts[op]++;
 	int i, assoc = c->assoc;
 	block *v;
@@ -130,7 +130,7 @@ bool cache_access (cache *c, unsigned long long int address, unsigned long long 
 	// tag match?
 
 	for (i=0; i<assoc; i++) {
-		if (v[i].tag == tag) {
+		if (v[i].tag == tag && v[i].valid) {
 			if (at == ACCESS_STORE || at == ACCESS_WRITEBACK) v[i].dirty = true;
 			if (c->replacement_policy == REPLACEMENT_POLICY_LRU) {
 				// move this block to the mru position
@@ -157,9 +157,15 @@ bool cache_access (cache *c, unsigned long long int address, unsigned long long 
 			return false;
 		}
 	}
-	c->misses++;
 
 	// a miss.
+
+	c->misses++;
+
+	// should we place this block in the cache? if not, just return
+
+	if (!do_place) return true;
+
 	// find a block to replace
 
 	if (!set_valid) {
@@ -259,30 +265,35 @@ unsigned int memory_access (cache *L1, cache *L2, cache *L3, unsigned long long 
         if (missL1) {
                 miss |= MISS_L1_DEMAND;
 		unsigned long long int wbl2;
-		unsigned int missL2 = cache_access (&L2[core], address, pc, size, op, core, &wbl2);
+
+		// see if the block is in the L2, but don't place it there if not
+
+		unsigned int missL2 = cache_access (&L2[core], address, pc, size, op, core, &wbl2, false);
 		if (missL2) {
 			miss |= MISS_L2_DEMAND;
 			unsigned long long int wbl3;
-			// L3 shared between everyone
-			bool missL3 = cache_access (L3, address, pc, size, op, core, &wbl3);
+			// see if the block is in the shared LLC, but don't place it there if not
+			bool missL3 = cache_access (L3, address, pc, size, op, core, &wbl3, false);
 			if (missL3) miss |= MISS_L3_DEMAND;
-			// this is a demand access from the L1, so invalidate it out of the other caches
+			// if it is there, we need to invalidate out of the L2 and L3 for the L1 demand access
 			invalidate (L3, address);
 			invalidate (L2, address);
 		} else {
-			// no miss from L2; invalidate this out of the L2
+			// no miss from L2; invalidate this out of the L2 if it is there
 			invalidate (L2, address);
 		}
 		if (wbl1) {
 			miss |= MISS_L1_WRITEBACK;
 			// generate a writeback to L2
 			unsigned long long int wbl2;
-			(void) cache_access (&L2[core], wbl1, pc, size, DAN_WRITEBACK, core, &wbl2);
+			// place this L1 victim in the L2
+			(void) cache_access (&L2[core], wbl1, pc, size, DAN_WRITEBACK, core, &wbl2, true);
 			if (wbl2) {
 				// this writeback generated its own writeback
 				miss |= MISS_L2_WRITEBACK;
 				unsigned long long int wbl3;
-				unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3);
+				// place this L2 victim in the LLC
+				unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3, true);
 				if (wbl3) miss |= MISS_L3_WRITEBACK;
 				// what if we missed didn't write back to DRAM?
 				if (missL3) miss |= MISS_L3_DEMAND;
@@ -292,7 +303,7 @@ unsigned int memory_access (cache *L1, cache *L2, cache *L3, unsigned long long 
 			// generate a writeback to L3
 			if (miss & MISS_L2_WRITEBACK) miss |= MISS_L2_2ND_WRITEBACK; else miss |= MISS_L2_WRITEBACK;
 			unsigned long long int wbl3;
-			unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3);
+			unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3, true);
 			if (missL3) { if (miss & MISS_L3_WRITEBACK) miss |= MISS_L3_2ND_WRITEBACK; } else miss |= MISS_L3_WRITEBACK;
 		}
 	}
