@@ -148,8 +148,6 @@ void CACHE_REPLACEMENT_STATE::UpdateReplacementState(
     UINT32 setIndex, INT32 updateWayID, const LINE_STATE *currLine, 
     UINT32 tid, Addr_t PC, UINT32 accessType, bool cacheHit )
 {
-	//fprintf (stderr, "ain't I a stinker? %lld\n", get_cycle_count ());
-	//fflush (stderr);
     // What replacement policy?
     if( replPolicy == CRC_REPL_LRU ) 
     {
