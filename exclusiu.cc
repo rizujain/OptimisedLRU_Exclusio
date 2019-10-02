@@ -121,7 +121,7 @@ int main (int argc, char *argv[]) {
 			L1_NSETS, 	// number of sets in L1
 			L1_ASSOC, 	// L1 associativity
 			L1_BLOCKSIZE, 	// L1 cache block size
-			0, 		// lru
+			dan_policy, 	// L1 replacement policy
 			0);
 
 		// initialize L2 cache
@@ -130,7 +130,7 @@ int main (int argc, char *argv[]) {
 			L2_NSETS, 	// number of sets in L2
 			L2_ASSOC, 	// L2 cache associativity
 			L2_BLOCKSIZE, 	// L2 cache block size
-			0, 		// lru
+			dan_policy, 	// L1 replacement policy
 			0);
 	}
 
