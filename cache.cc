@@ -93,7 +93,7 @@ void invalidate (cache *c, unsigned long long int address) {
 
 #define check_writeback(b) { if (writeback_address && v[(b)].valid && (v[(b)].dirty || (assoc!=16))) *writeback_address = ((v[(b)].tag << c->index_bits) + set) << c->offset_bits; }
 
-bool cache_access (cache *c, unsigned long long int address, unsigned long long int pc, unsigned int size, int op, unsigned int core, unsigned long long int *writeback_address = NULL, bool do_place = true) {
+bool cache_access (cache *c, unsigned long long int address, unsigned long long int pc, unsigned int size, int op, unsigned int core, unsigned long long int *writeback_address = NULL, bool do_place = true, int access_source = 0) {
 	c->counts[op]++;
 	int i, assoc = c->assoc;
 	block *v;
@@ -139,20 +139,12 @@ bool cache_access (cache *c, unsigned long long int address, unsigned long long 
 				// update CRC's LRU policy (for instrumentation)
 				ls.tag = tag;
 				if (at != ACCESS_WRITEBACK)
-#ifdef DANSHIP
-					c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, true, address);
-#else
-					c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, true);
-#endif
+					c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, true, access_source);
 			} else if (c->replacement_policy >= REPLACEMENT_POLICY_CRC) {
 				ls.tag = tag;
 				assert (i >= 0 && i < assoc);
 				if (at != ACCESS_WRITEBACK)
-#ifdef DANSHIP
-					c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, true, address);
-#else
-					c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, true);
-#endif
+					c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, true, access_source);
 			}
 			return false;
 		}
@@ -213,16 +205,12 @@ bool cache_access (cache *c, unsigned long long int address, unsigned long long 
 			int lru = -1;
 			for (int z=0; z<(int)assoc; z++) if (c->repl->repl[set][z].LRUstackposition == (unsigned) assoc-1) { lru = z; break; }
 			assert (lru >= 0);
-#ifdef DANSHIP
-			c->repl->UpdateReplacementState (set, lru, &ls, core, pc, at, false, address);
-#else
-			c->repl->UpdateReplacementState (set, lru, &ls, core, pc, at, false);
-#endif
+			c->repl->UpdateReplacementState (set, lru, &ls, core, pc, at, false, access_source);
 		}
 	} else {
 		// assume we are using CRC replacement policy, see what it wants to replace
 		if (set_valid) {
-			i = c->repl->GetVictimInSet (core, set, NULL, assoc, pc, address, at); // replace
+			i = c->repl->GetVictimInSet (core, set, NULL, assoc, pc, address, at, access_source); // replace
 		}
 		ls.tag = tag;
 
@@ -237,11 +225,7 @@ bool cache_access (cache *c, unsigned long long int address, unsigned long long 
 			v[i].tag = tag;
 			v[i].valid = 1;
 			assert (i >= 0 && i < assoc);
-#ifdef DANSHIP
-			c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, false, address);
-#else
-			c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, false);
-#endif
+			c->repl->UpdateReplacementState (set, i, &ls, core, pc, at, false, access_source);
 			place (c, pc, set, &v[i], offset);
 		}
 	}
@@ -261,19 +245,19 @@ unsigned int memory_access (cache *L1, cache *L2, cache *L3, unsigned long long 
 	unsigned int miss = 0;
 
 	unsigned long long int wbl1;
-	unsigned int missL1 = cache_access (&L1[core], address, pc, size, op, core, &wbl1);
+	unsigned int missL1 = cache_access (&L1[core], address, pc, size, op, core, &wbl1, ACCESS_1);
         if (missL1) {
                 miss |= MISS_L1_DEMAND;
 		unsigned long long int wbl2;
 
 		// see if the block is in the L2, but don't place it there if not
 
-		unsigned int missL2 = cache_access (&L2[core], address, pc, size, op, core, &wbl2, false);
+		unsigned int missL2 = cache_access (&L2[core], address, pc, size, op, core, &wbl2, false, ACCESS_2);
 		if (missL2) {
 			miss |= MISS_L2_DEMAND;
 			unsigned long long int wbl3;
 			// see if the block is in the shared LLC, but don't place it there if not
-			bool missL3 = cache_access (L3, address, pc, size, op, core, &wbl3, false);
+			bool missL3 = cache_access (L3, address, pc, size, op, core, &wbl3, false, ACCESS_3);
 			if (missL3) miss |= MISS_L3_DEMAND;
 			// if it is there, we need to invalidate out of the L2 and L3 for the L1 demand access
 			invalidate (L3, address);
@@ -287,13 +271,13 @@ unsigned int memory_access (cache *L1, cache *L2, cache *L3, unsigned long long 
 			// generate a writeback to L2
 			unsigned long long int wbl2;
 			// place this L1 victim in the L2
-			(void) cache_access (&L2[core], wbl1, pc, size, DAN_WRITEBACK, core, &wbl2, true);
+			(void) cache_access (&L2[core], wbl1, pc, size, DAN_WRITEBACK, core, &wbl2, true, ACCESS_4);
 			if (wbl2) {
 				// this writeback generated its own writeback
 				miss |= MISS_L2_WRITEBACK;
 				unsigned long long int wbl3;
 				// place this L2 victim in the LLC
-				unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3, true);
+				unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3, true, ACCESS_5);
 				if (wbl3) miss |= MISS_L3_WRITEBACK;
 				// what if we missed didn't write back to DRAM?
 				if (missL3) miss |= MISS_L3_DEMAND;
@@ -303,7 +287,7 @@ unsigned int memory_access (cache *L1, cache *L2, cache *L3, unsigned long long 
 			// generate a writeback to L3
 			if (miss & MISS_L2_WRITEBACK) miss |= MISS_L2_2ND_WRITEBACK; else miss |= MISS_L2_WRITEBACK;
 			unsigned long long int wbl3;
-			unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3, true);
+			unsigned int missL3 = cache_access (L3, wbl2, pc, size, DAN_WRITEBACK, core, &wbl3, true, ACCESS_6);
 			if (missL3) { if (miss & MISS_L3_WRITEBACK) miss |= MISS_L3_2ND_WRITEBACK; } else miss |= MISS_L3_WRITEBACK;
 		}
 	}

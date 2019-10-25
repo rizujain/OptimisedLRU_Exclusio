@@ -64,15 +64,15 @@ public:
     // The constructor CAN NOT be changed
     CACHE_REPLACEMENT_STATE( UINT32 _sets, UINT32 _assoc, UINT32 _pol );
 
-    INT32 GetVictimInSet( UINT32 tid, UINT32 setIndex, const LINE_STATE *vicSet, UINT32 assoc, Addr_t PC, Addr_t paddr, UINT32 accessType );
+    INT32 GetVictimInSet( UINT32 tid, UINT32 setIndex, const LINE_STATE *vicSet, UINT32 assoc, Addr_t PC, Addr_t paddr, UINT32 accessType, UINT32 accessSource);
 
-    void   UpdateReplacementState( UINT32 setIndex, INT32 updateWayID );
+    void   UpdateReplacementState( UINT32 setIndex, INT32 updateWayID);
 
     void   SetReplacementPolicy( UINT32 _pol ) { replPolicy = _pol; } 
     void   IncrementTimer() { mytimer++; } 
 
     void   UpdateReplacementState( UINT32 setIndex, INT32 updateWayID, const LINE_STATE *currLine, 
-                                   UINT32 tid, Addr_t PC, UINT32 accessType, bool cacheHit );
+                                   UINT32 tid, Addr_t PC, UINT32 accessType, bool cacheHit, UINT32 accessSource);
 
     ~CACHE_REPLACEMENT_STATE(void);
 

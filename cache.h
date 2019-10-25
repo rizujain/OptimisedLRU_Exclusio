@@ -32,6 +32,13 @@
 #define MISS_L2_2ND_WRITEBACK   0x0040
 #define MISS_L3_2ND_WRITEBACK   0x0040
 
+#define ACCESS_1		1	// first access to L1
+#define ACCESS_2		2	// access to L2 on L1 miss
+#define ACCESS_3		3	// access to L3 on L2 miss
+#define ACCESS_4		4	// writeback to L2 on eviction from L1
+#define ACCESS_5		5	// writeback to L3 on eviction from L2
+#define ACCESS_6		6	// second writeback to L3 on eviction from L2
+
 struct block {
 	unsigned int lru_stack_position;
 	unsigned long long int tag;
