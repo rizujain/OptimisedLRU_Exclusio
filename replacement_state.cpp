@@ -112,7 +112,7 @@ void CACHE_REPLACEMENT_STATE::InitReplacementState()
 // index for the line being replaced.                                         //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, const LINE_STATE *vicSet, UINT32 assoc, Addr_t PC, Addr_t paddr, UINT32 accessType ) {
+INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, const LINE_STATE *vicSet, UINT32 assoc, Addr_t PC, Addr_t paddr, UINT32 accessType, UINT32 accessSource ) {
     // If no invalid lines, then replace based on replacement policy
     if( replPolicy == CRC_REPL_LRU ) 
     {
@@ -146,7 +146,7 @@ INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, cons
 ////////////////////////////////////////////////////////////////////////////////
 void CACHE_REPLACEMENT_STATE::UpdateReplacementState( 
     UINT32 setIndex, INT32 updateWayID, const LINE_STATE *currLine, 
-    UINT32 tid, Addr_t PC, UINT32 accessType, bool cacheHit )
+    UINT32 tid, Addr_t PC, UINT32 accessType, bool cacheHit, UINT32 accessSource )
 {
     // What replacement policy?
     if( replPolicy == CRC_REPL_LRU ) 
