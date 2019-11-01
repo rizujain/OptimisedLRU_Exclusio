@@ -245,7 +245,7 @@ unsigned int memory_access (cache *L1, cache *L2, cache *L3, unsigned long long 
 	unsigned int miss = 0;
 
 	unsigned long long int wbl1;
-	unsigned int missL1 = cache_access (&L1[core], address, pc, size, op, core, &wbl1, ACCESS_1);
+	unsigned int missL1 = cache_access (&L1[core], address, pc, size, op, core, &wbl1, true, ACCESS_1);
         if (missL1) {
                 miss |= MISS_L1_DEMAND;
 		unsigned long long int wbl2;
