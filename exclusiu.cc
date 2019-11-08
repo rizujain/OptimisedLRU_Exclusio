@@ -223,6 +223,12 @@ int main (int argc, char *argv[]) {
 		if (use_cache) {
 			// simulate memory access with this trace
 
+			// since we're simulating an L1 cache, we can't have writebacks
+			// from these traces. so convert writebacks in the traces to writes.
+
+			if (t->cmd == DAN_WRITEBACK) {
+				t->cmd = DAN_WRITE;
+			}
 			unsigned int miss;
 			miss = memory_access (&L1[0], &L2[0], &LLC, t->address, t->pc, t->size, t->cmd, min_cycle_thread % MAX_CORES);
 			if (miss & MISS_L3_DEMAND) l3_misses[min_cycle_thread%MAX_CORES]++;
