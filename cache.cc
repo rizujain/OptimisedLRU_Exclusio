@@ -230,7 +230,10 @@ bool cache_access (cache *c, unsigned long long int address, unsigned long long 
 		}
 	}
 	// only count as a miss if the block is not a writeback block or prefetch
-	return (at != ACCESS_WRITEBACK) && (at != ACCESS_PREFETCH);
+	//return (at != ACCESS_WRITEBACK) && (at != ACCESS_PREFETCH);
+	// no, don't do that. we should always return true here; the other
+	// behavior was to support something that is now deprecated
+	return true;
 }
 
 // access the memory, returning an integer that has:
