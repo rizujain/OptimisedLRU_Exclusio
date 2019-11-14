@@ -97,6 +97,8 @@ void CACHE_REPLACEMENT_STATE::InitReplacementState()
         {
             // initialize stack position (for true LRU)
             repl[ setIndex ][ way ].LRUstackposition = way;
+            repl[ setIndex ][ way ].cleanFlag = 0;
+            repl[ setIndex ][ way ].dirtyFlag = 0;
         }
     }
 
@@ -125,7 +127,7 @@ INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, cons
     else if( replPolicy == CRC_REPL_CONTESTANT )
     {
         // Contestants:  ADD YOUR VICTIM SELECTION FUNCTION HERE
-	return Get_My_Victim (setIndex);
+	return Get_My_Victim (tid, setIndex, accessType);
     }
 
     // We should never here here
@@ -162,6 +164,7 @@ void CACHE_REPLACEMENT_STATE::UpdateReplacementState(
         // Contestants:  ADD YOUR UPDATE REPLACEMENT STATE FUNCTION HERE
         // Feel free to use any of the input parameters to make
         // updates to your replacement policy
+        UpdateRWP( setIndex, updateWayID, accessType );
     }
 }
 
@@ -237,13 +240,71 @@ void CACHE_REPLACEMENT_STATE::UpdateLRU( UINT32 setIndex, INT32 updateWayID )
 	repl[ setIndex ][ updateWayID ].LRUstackposition = 0;
 }
 
-INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex ) {
-	// return first way always
+INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
+    
+
+    //If it is write miss
+    if (at == ACCESS_STORE || at == ACCESS_WRITEBACK)
+    {
+        // if more dirty lines predicted
+        if ((mycache.dirty_line_p) > mycache.set[setid].dirty_lines_actual)
+        {
+            // SOme initialisation for block to evict
+            block_cache evict_BLK;
+            // Choose LRU from the read partition
+            // <Add code here to select evict block, name it evict_BLK>
+            while (evict_BLK != NULL) // If data is not null
+            {
+                if (evict_BLK.is_dirty == 0)
+                    // if its from read partition then we are good else choose next
+                    break;
+                //<add code to update toEvict block>
+            }
+            if (evict_BLK == NULL) //if null choose next
+                //evict_BLK = <>;
+                //Increment the dirty lines
+                mycache.set[setid].dirty_lines_actual++;
+            evict_BLK.is_dirty = 1;
+        }
+    }
+        
 	return 0;
 }
 
-void CACHE_REPLACEMENT_STATE::UpdateMyPolicy( UINT32 setIndex, INT32 updateWayID ) {
-	// do nothing
+void CACHE_REPLACEMENT_STATE::UpdateRWP( UINT32 setIndex, INT32 updateWayID,
+       UINT32 accessType )
+{
+
+    //Add all the dirty and clean values and update the global counters
+    for (UINT32 setIndex=0; setIndex<numsets; setIndex++)
+    {
+        for (UINT32 way=0; way<assoc; way++)
+        {
+            dirtyTimeCount[setIndex] += repl[setIndex][way].dirtyFlag;
+            cleanTimeCount[setIndex] += repl[setIndex][way].cleanFlag;
+        }
+    }
+    //Policy to decide the dynamic partition
+    UINT32 max = 0, clean_lines_total = 0, dirty_lines_total = 0;
+    for (UINT32 part = 0; part <= assoc; part++)
+    {
+        UINT32 d = 0;
+        UINT32 c = 0;
+        while (d < part)
+        {
+            dirty_lines_total += dirtyTimeCount[d++];
+        }
+        while (c < assoc)
+        {
+            clean_lines_total += cleanTimeCount[c++];
+        }
+        if (max < (clean_lines_total + dirty_lines_total))
+        {
+            max = clean_lines_total + dirty_lines_total;
+            dirtyLinePred = part;    // Partition here
+        }
+    }
+
 }
 
 CACHE_REPLACEMENT_STATE::~CACHE_REPLACEMENT_STATE (void) {
