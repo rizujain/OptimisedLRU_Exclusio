@@ -231,7 +231,11 @@ int main (int argc, char *argv[]) {
 			}
 			unsigned int miss;
 			miss = memory_access (&L1[0], &L2[0], &LLC, t->address, t->pc, t->size, t->cmd, min_cycle_thread % MAX_CORES);
-			if (miss & MISS_L3_DEMAND) l3_misses[min_cycle_thread%MAX_CORES]++;
+			if (miss & MISS_L3_DEMAND) {
+				if ((t->cmd != ACCESS_WRITEBACK) && (t->cmd != ACCESS_PREFETCH)) {
+					l3_misses[min_cycle_thread%MAX_CORES]++;
+				}
+			}
 		}
 
 		// replace the oldest trace with a new trace from the same trace file
