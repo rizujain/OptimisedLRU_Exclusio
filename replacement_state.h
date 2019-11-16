@@ -24,6 +24,12 @@
 
 using namespace std;
 
+#ifdef DEBUG
+#define Debug(x)    cout << x
+#else
+#define Debug(x)
+#endif
+
 // Replacement Policies Supported
 typedef enum 
 {
@@ -59,11 +65,11 @@ public:
     COUNTER mytimer;  // tracks # of references to the cache
 
     // CONTESTANTS:  Add extra state for cache here
-    UINT32* dirtyTimeCount;
-    UINT32* cleanTimeCount;
-    UINT32* dirtyLineActual;
+    UINT32* dirtyCount;
+    UINT32* cleanCount;
+    UINT32* numDirtyLines;
 
-    UINT32 dirtyLinePred;
+    UINT32 predNumDirtyLines;
 
   public:
     ostream & PrintStats(ostream &out);
@@ -89,7 +95,7 @@ public:
     INT32  Get_Random_Victim( UINT32 setIndex );
 
     INT32  Get_LRU_Victim( UINT32 setIndex );
-    INT32  Get_My_Victim( UINT32 setIndex );
+    INT32  Get_My_Victim( UINT32 setIndex, UINT32 accessType );
     void   UpdateLRU( UINT32 setIndex, INT32 updateWayID );
     void   UpdateRWP( UINT32 setIndex, INT32 updateWayID, UINT32 accessType );
 };

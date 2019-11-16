@@ -50,6 +50,22 @@ CACHE_REPLACEMENT_STATE::CACHE_REPLACEMENT_STATE( UINT32 _sets, UINT32 _assoc, U
 
     mytimer    = 0;
 
+    dirtyCount = new UINT32 [assoc];
+    cleanCount = new UINT32 [assoc];
+    for (UINT32 way=0; way<assoc; way++)
+    {
+        dirtyCount[way] = 0;
+        cleanCount[way] = 0;
+    }
+
+    numDirtyLines = new UINT32 [numsets];
+    for (UINT32 set=0; set<numsets; set++)
+    {
+        numDirtyLines[set] = 0;
+    }
+
+    predNumDirtyLines = 0;
+
     InitReplacementState();
 }
 
@@ -127,7 +143,7 @@ INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, cons
     else if( replPolicy == CRC_REPL_CONTESTANT )
     {
         // Contestants:  ADD YOUR VICTIM SELECTION FUNCTION HERE
-	return Get_My_Victim (tid, setIndex, accessType);
+	return Get_My_Victim (setIndex, accessType);
     }
 
     // We should never here here
@@ -241,67 +257,111 @@ void CACHE_REPLACEMENT_STATE::UpdateLRU( UINT32 setIndex, INT32 updateWayID )
 }
 
 INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
-    
 
-    //If it is write miss
-    if (at == ACCESS_STORE || at == ACCESS_WRITEBACK)
+    Debug("Getting the victim..." << endl);
+    // if more dirty lines predicted, use clean part
+    if (predNumDirtyLines >= numDirtyLines[setIndex])
     {
-        // if more dirty lines predicted
-        if ((mycache.dirty_line_p) > mycache.set[setid].dirty_lines_actual)
+        // LRU in clean (read) part:
+        INT32 evictBlkIdx = -1;
+        for (UINT32 way=predNumDirtyLines; way<assoc; way++)
         {
-            // SOme initialisation for block to evict
-            block_cache evict_BLK;
-            // Choose LRU from the read partition
-            // <Add code here to select evict block, name it evict_BLK>
-            while (evict_BLK != NULL) // If data is not null
+            // cout << "LRUstackposition" << repl[setIndex][way].LRUstackposition << endl;
+            if (repl[setIndex][way].LRUstackposition > evictBlkIdx)
             {
-                if (evict_BLK.is_dirty == 0)
-                    // if its from read partition then we are good else choose next
-                    break;
-                //<add code to update toEvict block>
+                evictBlkIdx = way;
             }
-            if (evict_BLK == NULL) //if null choose next
-                //evict_BLK = <>;
-                //Increment the dirty lines
-                mycache.set[setid].dirty_lines_actual++;
-            evict_BLK.is_dirty = 1;
         }
+
+        //If it is write miss
+        if (at == ACCESS_STORE || at == ACCESS_WRITEBACK)
+        {
+            numDirtyLines[setIndex]++;
+            // cout << "evictBlkIdx=" << evictBlkIdx << endl;
+            repl[setIndex][evictBlkIdx].dirtyFlag = 1;
+        }
+        // cout << "Done!" << endl;
+        return evictBlkIdx;
     }
-        
-	return 0;
+    else
+    // if less dirty lines predicted, use dirty part
+    {
+        // LRU in dirty (write) part
+        INT32 evictBlkIdx = -1;
+	    for(UINT32 way=0; way<predNumDirtyLines; way++)
+        {
+	        if (repl[setIndex][way].LRUstackposition > evictBlkIdx)
+            {
+	            evictBlkIdx = way;
+            }
+	    }
+
+        //If it is read miss
+        if (at == ACCESS_PREFETCH || at == ACCESS_LOAD || at == ACCESS_IFETCH)
+        {
+            numDirtyLines[setIndex]--;
+            repl[setIndex][evictBlkIdx].dirtyFlag = 0;
+        }
+        return evictBlkIdx;
+    }
+
+    cerr << "ERROR: Get_My_Victim()" << endl;
+	return false;
 }
 
 void CACHE_REPLACEMENT_STATE::UpdateRWP( UINT32 setIndex, INT32 updateWayID,
        UINT32 accessType )
 {
 
-    //Add all the dirty and clean values and update the global counters
+    Debug("Updating RWP..." << endl);
+
+    /* 1. Update LRU for the whole set */
+	// Determine current LRU stack position
+	UINT32 currLRUstackposition = repl[setIndex][updateWayID].LRUstackposition;
+
+	for(UINT32 way=0; way<assoc; way++) {
+		if( repl[setIndex][way].LRUstackposition < currLRUstackposition ) {
+			repl[setIndex][way].LRUstackposition++;
+		}
+	}
+	// Set the LRU stack position of new line to be zero
+	repl[setIndex][updateWayID].LRUstackposition = 0;
+
+    /* 2. UpdaccessTypee dirty/clean tags */
+    if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
+    {
+        repl[setIndex][updateWayID].dirtyFlag = 1;
+    }
+    else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD || accessType == ACCESS_IFETCH)
+    {
+        repl[setIndex][updateWayID].cleanFlag = 1;
+    }
+
+    /* 3. Update prediction of dirty lines */
+    //Add all the dirty and clean values and update the counters by ways.
     for (UINT32 setIndex=0; setIndex<numsets; setIndex++)
     {
         for (UINT32 way=0; way<assoc; way++)
         {
-            dirtyTimeCount[setIndex] += repl[setIndex][way].dirtyFlag;
-            cleanTimeCount[setIndex] += repl[setIndex][way].cleanFlag;
+            dirtyCount[way] += repl[setIndex][way].dirtyFlag;
+            cleanCount[way] += repl[setIndex][way].cleanFlag;
         }
     }
-    //Policy to decide the dynamic partition
-    UINT32 max = 0, clean_lines_total = 0, dirty_lines_total = 0;
+    UINT32 max = 0, totalCleanLines = 0, totalDirtyLines = 0;
     for (UINT32 part = 0; part <= assoc; part++)
     {
-        UINT32 d = 0;
-        UINT32 c = 0;
-        while (d < part)
+        for (UINT32 dPart=0; dPart<part; dPart++)
         {
-            dirty_lines_total += dirtyTimeCount[d++];
+            totalDirtyLines += dirtyCount[dPart];
         }
-        while (c < assoc)
+        for (UINT32 cPart=part; cPart<assoc; cPart++)
         {
-            clean_lines_total += cleanTimeCount[c++];
+            totalCleanLines += cleanCount[cPart];
         }
-        if (max < (clean_lines_total + dirty_lines_total))
+        if (max < (totalCleanLines + totalDirtyLines))
         {
-            max = clean_lines_total + dirty_lines_total;
-            dirtyLinePred = part;    // Partition here
+            max = totalCleanLines + totalDirtyLines;
+            predNumDirtyLines = part;    // Partition here
         }
     }
 
