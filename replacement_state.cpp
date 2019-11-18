@@ -113,8 +113,9 @@ void CACHE_REPLACEMENT_STATE::InitReplacementState()
         {
             // initialize stack position (for true LRU)
             repl[ setIndex ][ way ].LRUstackposition = way;
-            repl[ setIndex ][ way ].cleanFlag = 0;
-            repl[ setIndex ][ way ].dirtyFlag = 0;
+            repl[ setIndex ][ way ].cleanShadow = 0;
+            repl[ setIndex ][ way ].dirtyShadow = 0;
+            repl[ setIndex ][ way ].dirtyBit = 0;
         }
     }
 
@@ -143,7 +144,7 @@ INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet( UINT32 tid, UINT32 setIndex, cons
     else if( replPolicy == CRC_REPL_CONTESTANT )
     {
         // Contestants:  ADD YOUR VICTIM SELECTION FUNCTION HERE
-	return Get_My_Victim (setIndex, accessType);
+        return Get_My_Victim (setIndex, accessType);
     }
 
     // We should never here here
@@ -180,7 +181,7 @@ void CACHE_REPLACEMENT_STATE::UpdateReplacementState(
         // Contestants:  ADD YOUR UPDATE REPLACEMENT STATE FUNCTION HERE
         // Feel free to use any of the input parameters to make
         // updates to your replacement policy
-        UpdateRWP( setIndex, updateWayID, accessType );
+        UpdateRWP( setIndex, updateWayID, accessType, cacheHit );
     }
 }
 
@@ -260,27 +261,25 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
 
     Debug("Getting the victim..." << endl);
     // if more dirty lines predicted, use clean part
-    if (predNumDirtyLines >= numDirtyLines[setIndex])
+    if (predNumDirtyLines > numDirtyLines[setIndex])
     {
         // LRU in clean (read) part:
         INT32 evictBlkIdx = -1;
-        for (UINT32 way=predNumDirtyLines; way<assoc; way++)
+        for (UINT32 way=0; way<assoc; way++)
         {
-            // cout << "LRUstackposition" << repl[setIndex][way].LRUstackposition << endl;
+            if (repl[setIndex][way].dirtyBit == 1) continue;
             if (repl[setIndex][way].LRUstackposition > evictBlkIdx)
             {
                 evictBlkIdx = way;
             }
         }
 
-        //If it is write miss
+        //If it is a write miss
         if (at == ACCESS_STORE || at == ACCESS_WRITEBACK)
         {
             numDirtyLines[setIndex]++;
-            // cout << "evictBlkIdx=" << evictBlkIdx << endl;
-            repl[setIndex][evictBlkIdx].dirtyFlag = 1;
+            repl[setIndex][evictBlkIdx].dirtyBit = 1;
         }
-        // cout << "Done!" << endl;
         return evictBlkIdx;
     }
     else
@@ -288,19 +287,20 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
     {
         // LRU in dirty (write) part
         INT32 evictBlkIdx = -1;
-	    for(UINT32 way=0; way<predNumDirtyLines; way++)
+	    for(UINT32 way=0; way<assoc; way++)
         {
+            if (repl[setIndex][way].dirtyBit == 0) continue;
 	        if (repl[setIndex][way].LRUstackposition > evictBlkIdx)
             {
 	            evictBlkIdx = way;
             }
 	    }
 
-        //If it is read miss
+        //If it is a read miss
         if (at == ACCESS_PREFETCH || at == ACCESS_LOAD || at == ACCESS_IFETCH)
         {
             numDirtyLines[setIndex]--;
-            repl[setIndex][evictBlkIdx].dirtyFlag = 0;
+            repl[setIndex][evictBlkIdx].dirtyBit = 0;
         }
         return evictBlkIdx;
     }
@@ -310,7 +310,7 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
 }
 
 void CACHE_REPLACEMENT_STATE::UpdateRWP( UINT32 setIndex, INT32 updateWayID,
-       UINT32 accessType )
+       UINT32 accessType, bool hit )
 {
 
     Debug("Updating RWP..." << endl);
@@ -327,14 +327,27 @@ void CACHE_REPLACEMENT_STATE::UpdateRWP( UINT32 setIndex, INT32 updateWayID,
 	// Set the LRU stack position of new line to be zero
 	repl[setIndex][updateWayID].LRUstackposition = 0;
 
-    /* 2. UpdaccessTypee dirty/clean tags */
-    if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
+    /* 2. Update dirty/clean Shadow and the dirty bit */
+    if (hit)
     {
-        repl[setIndex][updateWayID].dirtyFlag = 1;
-    }
-    else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD || accessType == ACCESS_IFETCH)
-    {
-        repl[setIndex][updateWayID].cleanFlag = 1;
+        if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
+        {
+            repl[setIndex][updateWayID].dirtyShadow = 1;
+            repl[setIndex][updateWayID].dirtyBit = 1;
+            if (repl[setIndex][updateWayID].dirtyBit == 0)
+            {
+                numDirtyLines[setIndex]++;
+            }
+        }
+        else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD 
+                || accessType == ACCESS_IFETCH)
+        {
+            repl[setIndex][updateWayID].cleanShadow = 1;
+            if (repl[setIndex][updateWayID].dirtyBit == 1)
+            {
+                numDirtyLines[setIndex]--;
+            }
+        }
     }
 
     /* 3. Update prediction of dirty lines */
@@ -343,8 +356,8 @@ void CACHE_REPLACEMENT_STATE::UpdateRWP( UINT32 setIndex, INT32 updateWayID,
     {
         for (UINT32 way=0; way<assoc; way++)
         {
-            dirtyCount[way] += repl[setIndex][way].dirtyFlag;
-            cleanCount[way] += repl[setIndex][way].cleanFlag;
+            dirtyCount[way] += repl[setIndex][way].dirtyShadow;
+            cleanCount[way] += repl[setIndex][way].cleanShadow;
         }
     }
     UINT32 max = 0, totalCleanLines = 0, totalDirtyLines = 0;

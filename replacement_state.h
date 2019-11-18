@@ -44,8 +44,12 @@ typedef struct
     UINT32  LRUstackposition;
 
     // CONTESTANTS: Add extra state per cache line here
-    UINT32 cleanFlag;
-    UINT32 dirtyFlag;
+
+    /* Shadow flags always update at Read/Write hit */
+    UINT32 cleanShadow;
+    UINT32 dirtyShadow;
+
+    UINT32 dirtyBit;
 
 } LINE_REPLACEMENT_STATE;
 
@@ -97,7 +101,7 @@ public:
     INT32  Get_LRU_Victim( UINT32 setIndex );
     INT32  Get_My_Victim( UINT32 setIndex, UINT32 accessType );
     void   UpdateLRU( UINT32 setIndex, INT32 updateWayID );
-    void   UpdateRWP( UINT32 setIndex, INT32 updateWayID, UINT32 accessType );
+    void   UpdateRWP( UINT32 setIndex, INT32 updateWayID, UINT32 accessType, bool hit );
 };
 
 #endif
