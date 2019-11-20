@@ -280,6 +280,11 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
             numDirtyLines[setIndex]++;
             repl[setIndex][evictBlkIdx].dirtyBit = 1;
         }
+        if (evictBlkIdx != -1)
+        {
+            repl[setIndex][evictBlkIdx].dirtyShadow = 0;
+            repl[setIndex][evictBlkIdx].cleanShadow = 0;
+        }
         return evictBlkIdx;
     }
     else
@@ -301,6 +306,11 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim( UINT32 setIndex, UINT32 at ) {
         {
             numDirtyLines[setIndex]--;
             repl[setIndex][evictBlkIdx].dirtyBit = 0;
+        }
+        if (evictBlkIdx != -1)
+        {
+            repl[setIndex][evictBlkIdx].dirtyShadow = 0;
+            repl[setIndex][evictBlkIdx].cleanShadow = 0;
         }
         return evictBlkIdx;
     }
