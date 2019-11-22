@@ -266,18 +266,25 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim(UINT32 setIndex, UINT32 at)
 
     Debug("Getting the victim..." << endl);
     // if more dirty lines predicted, use clean part
+    INT32 evictBlkIdx = -1;
+    UINT32 maxStackPosition = 0;
     if (predNumDirtyLines > numDirtyLines[setIndex])
     {
         // LRU in clean (read) part:
-        INT32 evictBlkIdx = -1;
         for (UINT32 way = 0; way < assoc; way++)
         {
             if (repl[setIndex][way].dirtyBit == 1)
                 continue;
-            if (repl[setIndex][way].LRUstackposition > evictBlkIdx)
+            if (repl[setIndex][way].LRUstackposition >= maxStackPosition)
             {
+                maxStackPosition = repl[setIndex][way].LRUstackposition;
                 evictBlkIdx = way;
             }
+        }
+
+        if (evictBlkIdx == -1)
+        {
+            return evictBlkIdx;
         }
 
         //If it is a write miss
@@ -286,26 +293,25 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim(UINT32 setIndex, UINT32 at)
             numDirtyLines[setIndex]++;
             repl[setIndex][evictBlkIdx].dirtyBit = 1;
         }
-        if (evictBlkIdx != -1)
-        {
-            repl[setIndex][evictBlkIdx].dirtyShadow = 0;
-            repl[setIndex][evictBlkIdx].cleanShadow = 0;
-        }
-        return evictBlkIdx;
     }
     else
     // if less dirty lines predicted, use dirty part
     {
         // LRU in dirty (write) part
-        INT32 evictBlkIdx = -1;
         for (UINT32 way = 0; way < assoc; way++)
         {
             if (repl[setIndex][way].dirtyBit == 0)
                 continue;
-            if (repl[setIndex][way].LRUstackposition > evictBlkIdx)
+            if (repl[setIndex][way].LRUstackposition >= maxStackPosition)
             {
+                maxStackPosition = repl[setIndex][way].LRUstackposition;
                 evictBlkIdx = way;
             }
+        }
+
+        if (evictBlkIdx == -1)
+        {
+            return evictBlkIdx;
         }
 
         //If it is a read miss
@@ -314,16 +320,11 @@ INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim(UINT32 setIndex, UINT32 at)
             numDirtyLines[setIndex]--;
             repl[setIndex][evictBlkIdx].dirtyBit = 0;
         }
-        if (evictBlkIdx != -1)
-        {
-            repl[setIndex][evictBlkIdx].dirtyShadow = 0;
-            repl[setIndex][evictBlkIdx].cleanShadow = 0;
-        }
-        return evictBlkIdx;
     }
 
-    cerr << "ERROR: Get_My_Victim()" << endl;
-    return false;
+    repl[setIndex][evictBlkIdx].dirtyShadow = 0;
+    repl[setIndex][evictBlkIdx].cleanShadow = 0;
+    return evictBlkIdx;
 }
 
 void CACHE_REPLACEMENT_STATE::UpdateRWP(UINT32 setIndex, INT32 updateWayID,
@@ -351,28 +352,24 @@ void CACHE_REPLACEMENT_STATE::UpdateRWP(UINT32 setIndex, INT32 updateWayID,
     {
         if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
         {
-            repl[setIndex][updateWayID].dirtyShadow = 1;
-            repl[setIndex][updateWayID].dirtyBit = 1;
             if (repl[setIndex][updateWayID].dirtyBit == 0)
             {
                 numDirtyLines[setIndex]++;
             }
+            repl[setIndex][updateWayID].dirtyShadow = 1;
+            repl[setIndex][updateWayID].dirtyBit = 1;
         }
         else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD || accessType == ACCESS_IFETCH)
         {
             repl[setIndex][updateWayID].cleanShadow = 1;
-            if (repl[setIndex][updateWayID].dirtyBit == 1)
-            {
-                numDirtyLines[setIndex]--;
-            }
         }
     }
 
     /* 3. Update prediction of dirty lines */
     //Add all the dirty and clean values and update the counters by ways.
-    for (UINT32 setIndex = 0; setIndex < numsets; setIndex++)
+    for (UINT32 way = 0; way < assoc; way++)
     {
-        for (UINT32 way = 0; way < assoc; way++)
+        for (UINT32 setIndex = 0; setIndex < numsets; setIndex++)
         {
             dirtyCount[way] += repl[setIndex][way].dirtyShadow;
             cleanCount[way] += repl[setIndex][way].cleanShadow;
@@ -381,6 +378,8 @@ void CACHE_REPLACEMENT_STATE::UpdateRWP(UINT32 setIndex, INT32 updateWayID,
     UINT32 max = 0, totalCleanLines = 0, totalDirtyLines = 0;
     for (UINT32 part = 0; part <= assoc; part++)
     {
+        totalCleanLines = 0;
+        totalDirtyLines = 0;
         for (UINT32 dPart = 0; dPart < part; dPart++)
         {
             totalDirtyLines += dirtyCount[dPart];
