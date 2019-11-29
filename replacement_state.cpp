@@ -49,6 +49,22 @@ CACHE_REPLACEMENT_STATE::CACHE_REPLACEMENT_STATE(UINT32 _sets, UINT32 _assoc, UI
 
     mytimer = 0;
 
+    dirtyCount = new UINT32[assoc];
+    cleanCount = new UINT32[assoc];
+    for (UINT32 LRUstackposition = 0; LRUstackposition < assoc; LRUstackposition++)
+    {
+        dirtyCount[LRUstackposition] = 0;
+        cleanCount[LRUstackposition] = 0;
+    }
+
+    numDirtyLines = new UINT32[numsets];
+    for (UINT32 set = 0; set < numsets; set++)
+    {
+        numDirtyLines[set] = 0;
+    }
+
+    predNumDirtyLines = 0;
+
     InitReplacementState();
 }
 
@@ -95,6 +111,15 @@ void CACHE_REPLACEMENT_STATE::InitReplacementState()
         {
             // initialize stack position (for true LRU)
             repl[setIndex][way].LRUstackposition = way;
+            repl[setIndex][way].cleanShadowTag = 0;
+            repl[setIndex][way].dirtyShadowTag = 0;
+            repl[setIndex][way].dirtyBit = 0;
+            //            repl[setIndex][way].cleanLRUstackposition = way;
+            //            repl[setIndex][way].dirtyLRUstackposition = way;
+
+            //            repl[setIndex][way].cleanShadow = 0;
+            //            repl[setIndex][way].dirtyShadow = 0;
+            //            repl[setIndex][way].dirtyBit = 0;
         }
     }
 
@@ -125,7 +150,10 @@ INT32 CACHE_REPLACEMENT_STATE::GetVictimInSet(UINT32 tid, UINT32 setIndex, const
     else if (replPolicy == CRC_REPL_CONTESTANT)
     {
         // Contestants:  ADD YOUR VICTIM SELECTION FUNCTION HERE
-        return Get_My_Victim(setIndex);
+        // Only use our mechanism in the LLC
+        //         if (assoc == 16) return Get_My_Victim(setIndex, accessType);
+        //         else return Get_LRU_Victim(setIndex);
+        return Get_My_Victim(setIndex, accessType);
     }
 
     // We should never here here
@@ -162,6 +190,7 @@ void CACHE_REPLACEMENT_STATE::UpdateReplacementState(
         // Contestants:  ADD YOUR UPDATE REPLACEMENT STATE FUNCTION HERE
         // Feel free to use any of the input parameters to make
         // updates to your replacement policy
+        UpdateRWP(setIndex, updateWayID, accessType, cacheHit, currLine);
     }
 }
 
@@ -241,15 +270,196 @@ void CACHE_REPLACEMENT_STATE::UpdateLRU(UINT32 setIndex, INT32 updateWayID)
     repl[setIndex][updateWayID].LRUstackposition = 0;
 }
 
-INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim(UINT32 setIndex)
+INT32 CACHE_REPLACEMENT_STATE::Get_My_Victim(UINT32 setIndex, UINT32 at)
 {
-    // return first way always
-    return 0;
+
+    //    Debug("Getting the victim..." << endl);
+
+    //    if  ((predNumDirtyLines != 8) && (predNumDirtyLines != 0) && (predNumDirtyLines != 4) && (predNumDirtyLines != 16))
+    //    if  ((numDirtyLines[setIndex] != 0) && (numDirtyLines[setIndex] != 1) && (numDirtyLines[setIndex] != 8))
+    //    {
+    //        cout<<"PreNumDirtyLines:"<<predNumDirtyLines<<endl;
+    //        cout<<"NumDirtyLines:"<<numDirtyLines[setIndex]<<endl;
+
+    //    }
+
+    // Initialization
+    if ((predNumDirtyLines == 0) && (numDirtyLines[setIndex] == 0))
+    {
+        INT32 evictBlkIdx = 0;
+        for (UINT32 way = 0; way < assoc; way++)
+        {
+            if (repl[setIndex][way].LRUstackposition > repl[setIndex][evictBlkIdx].LRUstackposition)
+            {
+                evictBlkIdx = way;
+            }
+        }
+        return evictBlkIdx;
+    }
+
+    // if more dirty lines predicted, use clean part
+    else if (predNumDirtyLines > numDirtyLines[setIndex])
+    {
+
+        // LRU in clean (read) part:
+        INT32 evictBlkIdx = 0;
+        for (UINT32 way = 0; way < assoc; way++)
+        {
+            if (repl[setIndex][way].dirtyBit == 1)
+                continue;
+            //Patrick: Stackposition is not way! its LRU position!!
+
+            if (repl[setIndex][way].LRUstackposition > repl[setIndex][evictBlkIdx].LRUstackposition)
+            {
+                evictBlkIdx = way;
+            }
+        }
+        return evictBlkIdx;
+    }
+    else
+    // if less dirty lines predicted, use dirty part
+    {
+        // LRU in dirty (write) part
+        INT32 evictBlkIdx = 0;
+        for (UINT32 way = 0; way < assoc; way++)
+        {
+            if (repl[setIndex][way].dirtyBit == 0)
+                continue;
+            // Patrick: same as before
+
+            if (repl[setIndex][way].LRUstackposition > repl[setIndex][evictBlkIdx].LRUstackposition)
+            {
+                evictBlkIdx = way;
+            }
+        }
+        return evictBlkIdx;
+    }
+
+    cerr << "ERROR: Get_My_Victim()" << endl;
+    return false;
 }
 
-void CACHE_REPLACEMENT_STATE::UpdateMyPolicy(UINT32 setIndex, INT32 updateWayID)
+void CACHE_REPLACEMENT_STATE::UpdateRWP(UINT32 setIndex, INT32 updateWayID,
+                                        UINT32 accessType, bool hit, const LINE_STATE *currLine)
 {
-    // do nothing
+
+    //    Debug("Updating RWP..." << endl);
+
+    UINT64 tag = currLine->tag;
+    UINT32 currLRUstackposition = repl[setIndex][updateWayID].LRUstackposition;
+    //patrick: update clean/dirty directories
+    if (!hit)
+    { // Write miss: allocate line to dirty directory;
+        if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
+        {
+            repl[setIndex][updateWayID].dirtyShadowTag = tag;
+            repl[setIndex][updateWayID].cleanShadowTag = 0;
+            if (repl[setIndex][updateWayID].dirtyBit == 0)
+            {
+                numDirtyLines[setIndex]++;
+            }
+            repl[setIndex][updateWayID].dirtyBit = 1;
+        }
+        // read miss: allocate line to clean directory;
+        else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD || accessType == ACCESS_IFETCH)
+        {
+            repl[setIndex][updateWayID].dirtyShadowTag = 0;
+            repl[setIndex][updateWayID].cleanShadowTag = tag;
+            if (repl[setIndex][updateWayID].dirtyBit == 1)
+            {
+                numDirtyLines[setIndex]--;
+            }
+            repl[setIndex][updateWayID].dirtyBit = 0;
+        }
+    }
+
+    else if (hit)
+    {
+        // Write hit: move line from clean directory to dirty directory;
+        if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
+        {
+
+            repl[setIndex][updateWayID].dirtyShadowTag = tag;
+            repl[setIndex][updateWayID].cleanShadowTag = 0;
+            if (repl[setIndex][updateWayID].dirtyBit == 0)
+            {
+                numDirtyLines[setIndex]++;
+            }
+            repl[setIndex][updateWayID].dirtyBit = 1;
+        }
+
+        // read hit: count the reused line
+        else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD || accessType == ACCESS_IFETCH)
+
+        {
+            if (repl[setIndex][updateWayID].dirtyShadowTag != 0)
+                dirtyCount[currLRUstackposition]++;
+            else if (repl[setIndex][updateWayID].cleanShadowTag != 0)
+                cleanCount[currLRUstackposition]++;
+        }
+    }
+
+    /* 1. Update LRU for the whole set */
+    // Determine current LRU stack position
+
+    for (UINT32 way = 0; way < assoc; way++)
+    {
+        if (repl[setIndex][way].LRUstackposition < currLRUstackposition)
+        {
+            repl[setIndex][way].LRUstackposition++;
+        }
+    }
+    // Set the LRU stack position of new line to be zero
+    repl[setIndex][updateWayID].LRUstackposition = 0;
+
+    //    /* 2. Update dirty/clean Shadow and the dirty bit */
+    //    if (hit)
+    //    {
+    //        if (accessType == ACCESS_STORE || accessType == ACCESS_WRITEBACK)
+    //        {
+    //            repl[setIndex][updateWayID].dirtyShadow = 1;
+    //            repl[setIndex][updateWayID].cleanShadow = 0;
+    //            //patrick: I changed the order of these two lines
+    //            if (repl[setIndex][updateWayID].dirtyBit == 0)
+    //            {
+    //                numDirtyLines[setIndex]++;
+    //            }
+    //            repl[setIndex][updateWayID].dirtyBit = 1;
+    //
+    //
+    //        }
+    //        else if (accessType == ACCESS_PREFETCH || accessType == ACCESS_LOAD || accessType == ACCESS_IFETCH)
+    //        {
+    //            repl[setIndex][updateWayID].cleanShadow = 1;
+    //            repl[setIndex][updateWayID].dirtyShadow = 0;
+    //            if (repl[setIndex][updateWayID].dirtyBit == 1)
+    //            {
+    //                numDirtyLines[setIndex]--;
+    //            }
+    //            repl[setIndex][updateWayID].dirtyBit = 0;
+    //
+    //        }
+    //    }
+
+    /* 3. Update prediction of dirty lines */ //TODO: change it to stack position rather than way location
+    //Add all the dirty and clean values and update the counters by ways.
+    UINT32 max = 0, totalCleanLines = 0, totalDirtyLines = 0;
+    for (UINT32 part = 0; part <= assoc; part++)
+    {
+        for (UINT32 dPart = 0; dPart < part; dPart++)
+        {
+            totalDirtyLines += dirtyCount[dPart];
+        }
+        for (UINT32 cPart = part; cPart < assoc; cPart++)
+        {
+            totalCleanLines += cleanCount[cPart];
+        }
+        if (max < (totalCleanLines + totalDirtyLines))
+        {
+            max = totalCleanLines + totalDirtyLines;
+            predNumDirtyLines = part; // Partition here
+        }
+    }
 }
 
 CACHE_REPLACEMENT_STATE::~CACHE_REPLACEMENT_STATE(void)

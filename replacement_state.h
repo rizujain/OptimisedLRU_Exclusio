@@ -24,6 +24,12 @@
 
 using namespace std;
 
+#ifdef DEBUG
+#define Debug(x) cout << x
+#else
+#define Debug(x)
+#endif
+
 // Replacement Policies Supported
 typedef enum
 {
@@ -38,6 +44,17 @@ typedef struct
   UINT32 LRUstackposition;
 
   // CONTESTANTS: Add extra state per cache line here
+
+  // patrick: create clean/dirty directories
+  /* Shadow flags always update at Read/Write hit */
+  UINT64 cleanShadowTag;
+  UINT64 dirtyShadowTag;
+  //  UINT32 cleanLRUstackposition;
+  //  UINT32 dirtyLRUstackposition;
+  //  UINT32 cleanShadow;
+  //  UINT32 dirtyShadow;
+
+  UINT32 dirtyBit;
 
 } LINE_REPLACEMENT_STATE;
 
@@ -57,6 +74,11 @@ private:
   COUNTER mytimer; // tracks # of references to the cache
 
   // CONTESTANTS:  Add extra state for cache here
+  UINT32 *dirtyCount;
+  UINT32 *cleanCount;
+  UINT32 *numDirtyLines;
+
+  UINT32 predNumDirtyLines;
 
 public:
   ostream &PrintStats(ostream &out);
@@ -81,9 +103,9 @@ private:
   INT32 Get_Random_Victim(UINT32 setIndex);
 
   INT32 Get_LRU_Victim(UINT32 setIndex);
-  INT32 Get_My_Victim(UINT32 setIndex);
+  INT32 Get_My_Victim(UINT32 setIndex, UINT32 accessType);
   void UpdateLRU(UINT32 setIndex, INT32 updateWayID);
-  void UpdateMyPolicy(UINT32 setIndex, INT32 updateWayID);
+  void UpdateRWP(UINT32 setIndex, INT32 updateWayID, UINT32 accessType, bool hit, const LINE_STATE *currLine);
 };
 
 #endif
