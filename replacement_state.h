@@ -46,14 +46,8 @@ typedef struct
   // CONTESTANTS: Add extra state per cache line here
 
   // patrick: create clean/dirty directories
-  /* Shadow flags always update at Read/Write hit */
   UINT64 cleanShadowTag;
   UINT64 dirtyShadowTag;
-  //  UINT32 cleanLRUstackposition;
-  //  UINT32 dirtyLRUstackposition;
-  //  UINT32 cleanShadow;
-  //  UINT32 dirtyShadow;
-
   UINT32 dirtyBit;
 
 } LINE_REPLACEMENT_STATE;
