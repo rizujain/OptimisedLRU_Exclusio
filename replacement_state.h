@@ -38,6 +38,10 @@ typedef struct
   UINT32 LRUstackposition;
 
   // CONTESTANTS: Add extra state per cache line here
+  // Cache lines status flags
+  UINT64 cleanShadowTag;
+  UINT64 dirtyShadowTag;
+  UINT32 dirtyBit;
 
 } LINE_REPLACEMENT_STATE;
 
@@ -57,6 +61,11 @@ private:
   COUNTER mytimer; // tracks # of references to the cache
 
   // CONTESTANTS:  Add extra state for cache here
+  // Cache status variables
+  UINT32 *dirtyCount;
+  UINT32 *cleanCount;
+  UINT32 *numDirtyLines;
+  UINT32 predNumDirtyLines;
 
 public:
   ostream &PrintStats(ostream &out);
@@ -81,9 +90,9 @@ private:
   INT32 Get_Random_Victim(UINT32 setIndex);
 
   INT32 Get_LRU_Victim(UINT32 setIndex);
-  INT32 Get_My_Victim(UINT32 setIndex);
+  INT32 Get_My_Victim(UINT32 setIndex, UINT32 accessType);
   void UpdateLRU(UINT32 setIndex, INT32 updateWayID);
-  void UpdateMyPolicy(UINT32 setIndex, INT32 updateWayID);
+  void UpdateRWP(UINT32 setIndex, INT32 updateWayID, UINT32 accessType, bool hit, const LINE_STATE *currLine);
 };
 
 #endif

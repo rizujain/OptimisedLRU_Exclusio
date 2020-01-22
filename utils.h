@@ -11,8 +11,7 @@ typedef int INT32;
 typedef unsigned long long int COUNTER;
 typedef unsigned long long int Addr_t;
 
-struct LINE_STATE
-{
+struct LINE_STATE {
 	Addr_t tag;
 };
 
